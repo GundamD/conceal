@@ -47,12 +47,16 @@ android {
         main {
             manifest.srcFile 'AndroidManifest.xml'
             java.srcDirs = ['java']
+            // Use pre-built .so files for JitPack
             jniLibs.srcDir 'libs'
             jni.srcDirs = []
         }
     }
 
     tasks.register('ndkBuildRelease', Exec) {
+        // Skip NDK build on JitPack
+        onlyIf { !project.hasProperty('JITPACK') }
+        
         def ndkDir = android.ndkDirectory
         def projectDirPath = project.projectDir
 
@@ -81,7 +85,10 @@ android {
     }
 
     tasks.withType(JavaCompile).configureEach {
-        compileTask -> compileTask.dependsOn ndkBuildRelease
+        // Skip NDK dependency on JitPack
+        if (!project.hasProperty('JITPACK')) {
+            compileTask -> compileTask.dependsOn ndkBuildRelease
+        }
     }
 
     lintOptions {
