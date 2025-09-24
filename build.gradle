@@ -39,7 +39,10 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
-            withJavadocJar()
+            // Skip JavaDoc for JitPack to save space
+            if (!project.hasProperty('JITPACK')) {
+                withJavadocJar()
+            }
         }
     }
 

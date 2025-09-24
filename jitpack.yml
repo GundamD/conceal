@@ -1,4 +1,4 @@
 jdk:
   - openjdk17
 install:
-  - ./gradlew publishToMavenLocal -PJITPACK=true
+  - ./gradlew clean publishToMavenLocal -PJITPACK=true --no-daemon --max-workers=1
