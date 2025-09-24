@@ -1,111 +1,158 @@
 buildscript {
     repositories {
         mavenCentral()
+        google()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:1.0.0+'
+        classpath 'com.android.tools.build:gradle:8.7.2'
     }
 }
 
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion "23.0.1"
+    namespace "com.facebook.crypto"
+    ndkVersion "29.0.14033849"
+
+    compileSdkVersion 35
+    buildToolsVersion "35.0.0"
 
     defaultConfig {
-      minSdkVersion 9
-      targetSdkVersion 17
+        minSdkVersion 23
+        targetSdkVersion 35
+        versionName "1.1.3"
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+
+        externalNativeBuild {
+            ndkBuild {
+                arguments "ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                cFlags "-DANDROID_PAGE_SIZE=16384"
+                cppFlags "-DANDROID_PAGE_SIZE=16384"
+            }
+        }
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
     }
 
     sourceSets {
-      main {
-        manifest.srcFile 'AndroidManifest.xml'
-        java.srcDirs = ['java']
-        jniLibs.srcDir 'libs'
-        jni.srcDirs = []
-      }
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['java']
+            jniLibs.srcDir 'libs'
+            jni.srcDirs = []
+        }
     }
 
-    task ndkBuildRelease(type: Exec) {
-      commandLine 'ndk-build', '-C', file('native/crypto/').absolutePath,
-       'NDK_APPLICATION_MK=${PWD}/native/Application.mk',
-       'NDK_MODULE_PATH=${PWD}/native/third-party/',
-       'APP_BUILD_SCRIPT=${PWD}/native/crypto/Android.mk'
+    tasks.register('ndkBuildRelease', Exec) {
+        def ndkDir = android.ndkDirectory
+        def projectDirPath = project.projectDir
+
+        if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+            commandLine "cmd", "/c",
+                    "${ndkDir}\\ndk-build",
+                    "-C", file("${projectDirPath}/native/crypto").absolutePath,
+                    "NDK_APPLICATION_MK=${projectDirPath}/native/Application.mk",
+                    "NDK_MODULE_PATH=${projectDirPath}/native/third-party/",
+                    "APP_BUILD_SCRIPT=${projectDirPath}/native/crypto/Android.mk",
+                    "ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                    "V=1"
+        } else {
+            commandLine "${ndkDir}/ndk-build",
+                    "-C", file("${projectDirPath}/native/crypto").absolutePath,
+                    "NDK_APPLICATION_MK=${projectDirPath}/native/Application.mk",
+                    "NDK_MODULE_PATH=${projectDirPath}/native/third-party/",
+                    "APP_BUILD_SCRIPT=${projectDirPath}/native/crypto/Android.mk",
+                    "ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                    "V=1"
+        }
+
+        doFirst {
+            println ">>> " + commandLine.join(" ")
+        }
     }
 
-    tasks.withType(JavaCompile) {
-      compileTask -> compileTask.dependsOn ndkBuildRelease
+    tasks.withType(JavaCompile).configureEach {
+        compileTask -> compileTask.dependsOn ndkBuildRelease
     }
 
     lintOptions {
-      abortOnError false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }
 
-// Configure gradle.properties to do maven builds
-if (!project.hasProperty('sonatypeRepo') ||
-    !project.hasProperty('sonatypeUsername') ||
-    !project.hasProperty('sonatypePassword')) {
-  return;
+repositories {
+    google()
+    mavenCentral()
 }
 
-// Maven Push
+apply plugin: 'maven-publish'
 
-apply plugin: 'maven'
-apply plugin: 'signing'
-
-version = "1.1.3"
+version = "1.1.3-16kb-fixed"
 group = "com.facebook.conceal"
 
-configurations {
-    archives {
-        extendsFrom configurations.default
-    }
-}
+publishing {
+    publications {
+        create("release", MavenPublication) {
+            groupId = 'com.facebook.conceal'
+            artifactId = 'conceal'
+            version = '1.1.3-16kb-fixed'
 
-signing {
-    required { has("release") && gradle.taskGraph.hasTask("uploadArchives") }
-    sign configurations.archives
-}
+            artifact("$buildDir/outputs/aar/old-conceal-release.aar")
 
-uploadArchives {
-    configuration = configurations.archives
-    repositories.mavenDeployer {
-        beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
 
-        repository(url: sonatypeRepo) {
-            authentication(userName: sonatypeUsername, password: sonatypePassword)
+                // Add implementation dependencies
+                configurations.implementation.allDependencies.each { dep ->
+                    if (dep.group && dep.name && dep.version) {
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', dep.group)
+                        dependencyNode.appendNode('artifactId', dep.name)
+                        dependencyNode.appendNode('version', dep.version)
+                        dependencyNode.appendNode('scope', 'runtime')
+                    }
+                }
+            }
+
+            pom {
+                name = 'Conceal 2.0.3 with 16KB Support'
+                description = 'Facebook Conceal crypto library v2.0.3 with 16KB alignment for Android 15 compatibility'
+                url = 'https://github.com/facebookarchive/conceal'
+
+                licenses {
+                    license {
+                        name = 'BSD 2-Clause License'
+                        url = 'https://github.com/facebook/conceal/blob/master/LICENSE'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'gundamd'
+                        name = 'Abdroid Dev'
+                    }
+                }
+            }
         }
+    }
 
-        pom.project {
-            name 'Conceal'
-            packaging 'aar'
-            description 'Conceal is an easy to use, performant crypto library for android.'
-            url 'http://facebook.github.io/conceal'
-
-            scm {
-                url 'scm:git@github.com:facebook/conceal.git'
-                connection 'scm:git@github.com:facebook/conceal.git'
-                developerConnection 'scm:git@github.com:facebook/conceal.git'
-            }
-
-            licenses {
-                license {
-                    name 'BSD 2-Clause License'
-                    url 'https://github.com/facebook/conceal/blob/master/LICENSE'
-                    distribution 'repo'
-                }
-            }
-
-            developers {
-                developer {
-                    id 'subodh'
-                    name 'Subodh Iyengar'
-                    email 'mani.subodh@gmail.com'
-                }
-            }
+    repositories {
+        maven {
+            url = uri("$buildDir/repo")
         }
     }
 }
