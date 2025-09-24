@@ -1,24 +1,78 @@
-##What is Conceal? [![Build Status](https://travis-ci.org/facebook/conceal.svg?branch=master)](https://travis-ci.org/facebook/conceal)
+# Conceal (Forked & Updated)
 
-Conceal provides a set of Java APIs to perform cryptography on Android. 
-It was designed to be able to encrypt large files on disk in a fast and 
-memory efficient manner. 
+[![Build Status](https://travis-ci.org/facebook/conceal.svg?branch=master)](https://travis-ci.org/facebook/conceal)
 
-The major target for this project is typical Android devices which run old 
+Conceal provides a set of Java APIs to perform cryptography on Android.  
+It was designed to be able to encrypt large files on disk in a fast and
+memory efficient manner.
+
+The major target for this project is typical Android devices which run old
 Android versions, have low memory and slower processors.
 
-Unlike other libraries, which provide a Smorgasbord of encryption algorithms 
-and options, Conceal prefers to abstract this choice and use sane defaults. 
-Thus Conceal is not a general purpose crypto library, however it aims to provide 
+Unlike other libraries, which provide a Smorgasbord of encryption algorithms
+and options, Conceal prefers to abstract this choice and use sane defaults.  
+Thus Conceal is not a general purpose crypto library, however it aims to provide
 useful functionality.
 
 ***Upgrading version?*** Check the [Upgrade notes](#upgrade-notes) for key compatibility!
 
 ***Already using 1.1.x?*** It's strongly advised to upgrade to ```1.1.3``` as the library size is significatively smaller.
 
-##Quick start##
+---
 
-####Setup options####
+## ✨ Fork & Build System Updates
+
+This fork modernizes the build system and adds Android 15 compatibility improvements.
+
+### 🔧 Gradle & Build Configuration
+- Added **Gradle wrapper** (`gradlew`, `gradlew.bat`, `gradle-wrapper.properties`)  
+  → Ensures consistent builds across environments.  
+  → Configured to use **Gradle 9.0-milestone-1**.
+- Updated **Android Gradle Plugin** → `8.7.2`.
+- Updated SDK settings:
+    - `compileSdkVersion` → 35
+    - `buildToolsVersion` → `35.0.0`
+    - `minSdkVersion` → 23
+    - `targetSdkVersion` → 35
+- Updated `namespace` → `com.facebook.crypto`.
+- Bumped `versionName` → `1.1.3`.
+- Set Java compatibility → **Java 17**.
+- Configured **Maven publishing** with:
+    - New version: `1.1.3-16kb-fixed`
+    - Updated POM description (16KB alignment for Android 15).
+    - Sources + Javadoc JARs included.
+
+### 📦 Native (NDK) Build Updates
+- Set `ndkVersion` → `29.0.14033849`.
+- Defined ABI filters: `armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`.
+- Added build arguments:
+    - `ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`
+    - `-DANDROID_PAGE_SIZE=16384`
+- Refactored `ndkBuildRelease` task:
+    - Uses `android.ndkDirectory`
+    - Handles Windows path correctly
+
+### ⚙️ Native Code Configuration (`Application.mk`)
+- Updated:
+    - `APP_ABI` → `armeabi-v7a arm64-v8a x86 x86_64`
+    - `APP_PLATFORM` → `android-23`
+    - `APP_STL` → `c++_static`
+- Enabled **C++17** (`APP_CPPFLAGS += -std=c++17`).
+- Added linker flag:
+  ```make
+  LOCAL_LDFLAGS += "-Wl,-z,max-page-size=16384"
+  ```
+
+### 🛠 Code Changes
+- Added missing `<string.h>` includes in:
+    - `gcm_util.c`
+    - `hmac_util.c`
+
+---
+
+## Quick start
+
+#### Setup options
 
 * **Build using buck**
 ```bash
@@ -29,29 +83,27 @@ buck build :conceal_android
 
 * **Use Maven Central**: Available on maven central under **com.facebook.conceal:conceal:1.1.3@aar** as an AAR package.
 
-####Running Benchmarks####
+#### Running Benchmarks
 ```bash
-./benchmarks/run \
-  benchmarks/src/com/facebook/crypto/benchmarks/CipherReadBenchmark.java \
-  -- -Dsize=102400
+./benchmarks/run   benchmarks/src/com/facebook/crypto/benchmarks/CipherReadBenchmark.java   -- -Dsize=102400
 ```
 
-This script runs vogar with caliper benchmarks.
+This script runs vogar with caliper benchmarks.  
 You can also specify all the options caliper provides.
 
-######An aside on KitKat######
-> Conceal predates Jellybean 4.3. On KitKat, Android changed the provider for 
-> cryptographic algorithms to OpenSSL. The default Cipher stream however still 
-> does not perform well. When replaced with our Cipher stream 
-> (see BetterCipherInputStream), the default implementation is competitive against 
+###### An aside on KitKat
+> Conceal predates Jellybean 4.3. On KitKat, Android changed the provider for
+> cryptographic algorithms to OpenSSL. The default Cipher stream however still
+> does not perform well. When replaced with our Cipher stream
+> (see BetterCipherInputStream), the default implementation is competitive against
 > Conceal. On older phones, Conceal is faster than the system provided libraries.
 
-####Running unit tests####
+#### Running unit tests
 ```bash
 buck test
 ```
 
-####Running integration tests####
+#### Running integration tests
 ```bash
 ./instrumentTest/crypto/run
 ```
@@ -59,16 +111,17 @@ buck test
 Since Conceal uses native libraries, the only way to run a test on the entire
 encryption process is using integration tests.
 
-##Usage##
+---
 
-####Encryption###
+## Usage
+
+#### Encryption
 ```java
 // Creates a new Crypto object with default implementations of a key chain
 KeyChain keyChain = new SharedPrefsBackedKeyChain(context, CryptoConfig.KEY_256);
 Crypto crypto = AndroidConceal.get().createDefaultCrypto(keyChain);
 
 // Check for whether the crypto functionality is available
-// This might fail if Android does not load libaries correctly.
 if (!crypto.isAvailable()) {
   return;
 }
@@ -87,9 +140,8 @@ outputStream.write(plainText);
 outputStream.close();
 ```
 
-####Decryption####
+#### Decryption
 ```java
-// Get the file to which ciphertext has been written.
 FileInputStream fileStream = new FileInputStream(file);
 
 // Creates an input stream which decrypts the data as
@@ -98,16 +150,9 @@ InputStream inputStream = crypto.getCipherInputStream(
   fileStream,
   Entity.create("entity_id"));
 
-// Read into a byte array.
 int read;
 byte[] buffer = new byte[1024];
 
-// You must read the entire stream to completion.
-// The verification is done at the end of the stream.
-// Thus not reading till the end of the stream will cause
-// a security bug. For safety, you should not
-// use any of the data until it's been fully read or throw
-// away the data if an exception occurs.
 while ((read = inputStream.read(buffer)) != -1) {
   out.write(buffer, 0, read);
 }
@@ -124,7 +169,7 @@ byte[] cipherText = crypto.encrypt(plainText);
 byte[] plainText = crypto.decrypt(cipherText);
 ```
 
-####Integrity####
+#### Integrity
 ```java
 OutputStream outputStream = crypto.getMacOutputStream(fileStream, entity);
 outputStream.write(plainTextBytes);
@@ -132,61 +177,50 @@ outputStream.close();
 
 InputStream inputStream = crypto.getMacInputStream(fileStream, entity);
 
-// Will throw an exception if mac verification fails.
-// You must read the entire stream to completion.
-// The verification is done at the end of the stream.
-// Thus not reading till the end of the stream will cause
-// a security bug. For safety, you should not
-// use any of the data until it's been fully read or throw
-// away the data if an exception occurs.
 while((read = inputStream.read(buffer)) != -1) {
   out.write(buffer, 0, read);
 }
 inputStream.close();
 ```
 
-### Upgrade notes
+---
 
-Starting with v1.1 recommended encryption will use a 256-bit key (instead of 128-bit). This means stronger security.
+## Upgrade notes
+
+Starting with v1.1 recommended encryption will use a 256-bit key (instead of 128-bit). This means stronger security.  
 You should use this default.
 
 If you need to read from an existing file, you still will need 128-bit encryption. You can use the old way of creating `Crypto` objects as it preserves its 128-bit behavior. Although ideally you should re-encrypt that content with a 256-bit key.
 
-Also there's an improved way of creating Entity object which is platform independent. It's strongly recommended for new encrypted items although you need to stick to the old way for already encrypted content.
+Also there's an improved way of creating `Entity` objects which is platform independent. It's strongly recommended for new encrypted items although you need to stick to the old way for already encrypted content.
 
 #### Existing code still with 128-bit keys and old Entity (deprecated)
-
 ```java
-// this constructor creates a key chain that produces 128-bit keys
 KeyChain keyChain = new SharedPrefsBackedKeyChain(context);
-// this constructor creates a crypto that uses  128-bit keys
 Crypto crypto = new Crypto(keyChain, library);
 Entity entity = new Entity(someStringId);
 ```
 
 #### New code using 256-keys and Entity.create
-
-We recommend the use of the factory class `AndroidConceal`.
-
 ```java
-// explicitely create 256-bit key chain
 KeyChain keyChain = new SharedPrefsBackedKeyChain(context, CryptoConfig.KEY_256);
-// create the default crypto (expects 256-bit key)
 AndroidConceal.get().createDefaultCrypto(keyChain);
-// factory class also has explicit methods: createCrypto128Bits and ceateCrypto256Bits if desired.
 Entity entity = Entity.create(someStringId);
 ```
 
-##Troubleshooting##
+---
 
-####I'm getting NoSuchFieldError on runtime####
+## Troubleshooting
 
-If you hit an error on runtime and it says something similar to:
-
-````
+#### I'm getting NoSuchFieldError on runtime
+```
 java.lang.NoSuchFieldError: no field with name='mCtxPtr' signature='J' in class Lcom/facebook/crypto/cipher/NativeGCMCipher;
-````
+```
 
-This happens because native code needs to refer to Java fields/methods. For doing so it uses typical JNI functions which receive the name and signature. At the same time tools like proguard trim off or rename class members in order to get smaller executables. Normally this process is run on release versions. When native code request the member, it's not present anymore.
+This happens because native code needs to refer to Java fields/methods.  
+At the same time tools like ProGuard trim off or rename class members in order to get smaller executables.
 
-To avoid this kind of problems exceptions can be defined. You will need to configure proguard with the rules defined in ``proguard_annotations.pro``. You can use the file as is, or you can include its content in your own proguard configuration file.
+To avoid this, configure ProGuard with the rules defined in `proguard_annotations.pro`.  
+You can use the file as is, or include its content in your own configuration.
+
+---
